@@ -1,0 +1,29 @@
+name: Security Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "control-plane/**"
+      - "worker-agent/**"
+      - "proto/**"
+  push:
+    branches: [main]
+    paths:
+      - "control-plane/**"
+      - "worker-agent/**"
+      - "proto/**"
+
+jobs:
+  security:
+    name: Security Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Run security tests
+        run: |
+          echo "Security test suite placeholder — Phase 4+ will populate"
+          echo "Phase 0: No security tests yet (no sandbox code exists)"

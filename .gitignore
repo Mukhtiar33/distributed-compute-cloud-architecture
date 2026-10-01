@@ -1,0 +1,30 @@
+# Binaries
+/control-plane/control-plane
+/worker-agent/worker-agent
+
+# Go
+*.test
+*.out
+
+# Node / Next.js
+/website/node_modules/
+/website/.next/
+/website/out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docs build artifacts
+*.zip
