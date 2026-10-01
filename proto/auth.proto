@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package distributedcompute.auth;
+
+option go_package = "github.com/distributedcompute/cloud/proto/auth";
+
+service AuthService {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  rpc Session(SessionRequest) returns (SessionResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Revoke(RevokeRequest) returns (RevokeResponse);
+}
+
+message EnrollRequest {
+  string worker_id = 1;
+  bytes csr = 2;  // PEM-encoded Certificate Signing Request
+}
+
+message EnrollResponse {
+  string enrollment_credential = 1;
+  bytes client_certificate = 2;  // PEM-encoded client certificate
+}
+
+message SessionRequest {
+  string worker_id = 1;
+  string enrollment_credential = 2;
+}
+
+message SessionResponse {
+  string session_token = 1;
+  int64 expires_at = 2;  // Unix timestamp
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  string session_token = 2;
+  string status = 3;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message RevokeRequest {
+  string worker_id = 1;
+}
+
+message RevokeResponse {
+  bool revoked = 1;
+}

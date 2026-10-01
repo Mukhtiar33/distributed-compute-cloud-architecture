@@ -1,27 +1,53 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/distributedcompute/cloud/control-plane/internal/auth"
 	"github.com/distributedcompute/cloud/control-plane/internal/config"
+	"github.com/distributedcompute/cloud/control-plane/internal/server"
 )
 
 func main() {
 	cfg := config.Load()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"healthy","component":"control-plane"}`)
-	})
+	// Initialize token manager
+	tokenManager, err := auth.NewTokenManager()
+	if err != nil {
+		log.Fatalf("Failed to initialize token manager: %v", err)
+	}
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("Control Plane starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	// Initialize CA
+	ca, err := auth.NewCA("certs/ca.crt", "certs/ca.key")
+	if err != nil {
+		log.Fatalf("Failed to initialize CA: %v", err)
+	}
+
+	// Initialize worker store
+	workerStore := auth.NewWorkerStore()
+
+	// Create and start server
+	srv := server.NewServer(tokenManager, ca, workerStore)
+
+	// Handle shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigCh
+		log.Println("Shutting down Control Plane...")
+		srv.Stop()
+	}()
+
+	addr := cfg.BindAddress
+	if addr == "" {
+		addr = ":8443"
+	}
+
+	if err := srv.Start(addr, "certs/server.crt", "certs/server.key"); err != nil {
 		log.Fatalf("Control Plane failed: %v", err)
 		os.Exit(1)
 	}

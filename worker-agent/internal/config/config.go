@@ -2,11 +2,15 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"strconv"
 )
 
 // Config holds Worker Agent configuration.
 type Config struct {
-	ControlPlaneURL string
+	ControlPlaneURL   string
+	CredentialsDir    string
+	HeartbeatInterval int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -15,5 +19,27 @@ func Load() Config {
 	if v := os.Getenv("WORKER_CONTROL_PLANE_URL"); v != "" {
 		url = v
 	}
-	return Config{ControlPlaneURL: url}
+
+	credDir := ".worker-credentials"
+	if v := os.Getenv("WORKER_CREDENTIALS_DIR"); v != "" {
+		credDir = v
+	}
+
+	// Resolve to absolute path
+	if abs, err := filepath.Abs(credDir); err == nil {
+		credDir = abs
+	}
+
+	interval := 5
+	if v := os.Getenv("WORKER_HEARTBEAT_INTERVAL"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			interval = i
+		}
+	}
+
+	return Config{
+		ControlPlaneURL:   url,
+		CredentialsDir:    credDir,
+		HeartbeatInterval: interval,
+	}
 }
