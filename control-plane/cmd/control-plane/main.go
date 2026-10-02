@@ -9,6 +9,7 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
 	"github.com/distributedcompute/cloud/control-plane/internal/config"
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
+	"github.com/distributedcompute/cloud/control-plane/internal/scheduler"
 	"github.com/distributedcompute/cloud/control-plane/internal/server"
 )
 
@@ -32,6 +33,11 @@ func main() {
 
 	// Initialize job store
 	jobStore := jobs.NewStore()
+
+	// Initialize scheduler
+	sched := scheduler.NewScheduler(workerStore, jobStore)
+	sched.Start()
+	defer sched.Stop()
 
 	// Create and start server
 	srv := server.NewServer(tokenManager, ca, workerStore, jobStore)
