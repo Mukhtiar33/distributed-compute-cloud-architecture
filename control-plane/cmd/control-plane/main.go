@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
 	"github.com/distributedcompute/cloud/control-plane/internal/config"
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
+	"github.com/distributedcompute/cloud/control-plane/internal/registry"
 	"github.com/distributedcompute/cloud/control-plane/internal/scheduler"
 	"github.com/distributedcompute/cloud/control-plane/internal/server"
 )
@@ -39,8 +41,29 @@ func main() {
 	sched.Start()
 	defer sched.Stop()
 
+	// Initialize environment registry
+	envRegistry := registry.NewRegistry("environments")
+
+	// Register default environments
+	envRegistry.Register(&registry.Environment{
+		ID:        "python-3.11",
+		Name:      "Python 3.11",
+		Version:   "1.0.0",
+		Hash:      "abc123def456",
+		CreatedAt: time.Now(),
+		Metadata:  map[string]string{"description": "Python 3.11 base environment"},
+	})
+	envRegistry.Register(&registry.Environment{
+		ID:        "node-20",
+		Name:      "Node.js 20",
+		Version:   "1.0.0",
+		Hash:      "def456abc123",
+		CreatedAt: time.Now(),
+		Metadata:  map[string]string{"description": "Node.js 20 base environment"},
+	})
+
 	// Create and start server
-	srv := server.NewServer(tokenManager, ca, workerStore, jobStore)
+	srv := server.NewServer(tokenManager, ca, workerStore, jobStore, envRegistry)
 
 	// Handle shutdown
 	sigCh := make(chan os.Signal, 1)
