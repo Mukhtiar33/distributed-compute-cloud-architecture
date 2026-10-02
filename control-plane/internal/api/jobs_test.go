@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"mime/multipart"
@@ -12,15 +13,30 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 )
 
+func createTestZip(files map[string]string) []byte {
+	buf := new(bytes.Buffer)
+	w := zip.NewWriter(buf)
+	for name, content := range files {
+		f, _ := w.Create(name)
+		f.Write([]byte(content))
+	}
+	w.Close()
+	return buf.Bytes()
+}
+
 func TestSubmitJob_ValidSingle(t *testing.T) {
 	store := jobs.NewStore()
 	handler := NewJobHandler(store)
+
+	zipData := createTestZip(map[string]string{
+		"main.py": "print('hello world')",
+	})
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{"job_type":"single","environment":"python-3.11","entrypoint":"main.py","expected_output":"result.zip"}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(zipData)
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -35,8 +51,8 @@ func TestSubmitJob_ValidSingle(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&result)
-	if result["status"] != "intake_validated" {
-		t.Errorf("expected status intake_validated, got %s", result["status"])
+	if result["status"] != "scan_passed" {
+		t.Errorf("expected status scan_passed, got %s", result["status"])
 	}
 }
 
@@ -44,11 +60,15 @@ func TestSubmitJob_ValidParallel(t *testing.T) {
 	store := jobs.NewStore()
 	handler := NewJobHandler(store)
 
+	zipData := createTestZip(map[string]string{
+		"process.py": "print('processing')",
+	})
+
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{"job_type":"parallel","environment":"python-3.11","entrypoint":"process.py","inputs":["input1.csv","input2.csv"],"expected_output":"results.zip"}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(zipData)
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -60,6 +80,12 @@ func TestSubmitJob_ValidParallel(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d", w.Code)
 	}
+
+	var result map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["status"] != "scan_passed" {
+		t.Errorf("expected status scan_passed, got %s", result["status"])
+	}
 }
 
 func TestSubmitJob_MissingManifest(t *testing.T) {
@@ -69,7 +95,7 @@ func TestSubmitJob_MissingManifest(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"main.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -111,7 +137,7 @@ func TestSubmitJob_InvalidManifest(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{"job_type":"invalid","environment":"python-3.11","entrypoint":"main.py","expected_output":"result.zip"}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"main.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -139,7 +165,7 @@ func TestSubmitJob_ParallelMissingInputs(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{"job_type":"parallel","environment":"python-3.11","entrypoint":"process.py","expected_output":"results.zip"}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"process.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -204,7 +230,7 @@ func TestListJobs(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{"job_type":"single","environment":"python-3.11","entrypoint":"main.py","expected_output":"result.zip"}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"main.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -236,7 +262,7 @@ func TestSubmitJob_InvalidJSON(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{invalid json}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"main.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
@@ -264,7 +290,7 @@ func TestSubmitJob_MissingAllFields(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.WriteField("manifest", `{}`)
 	part, _ := writer.CreateFormFile("zip", "test.zip")
-	part.Write([]byte("fake zip content"))
+	part.Write(createTestZip(map[string]string{"main.py": "print('hello')"}))
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
