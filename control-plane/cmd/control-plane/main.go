@@ -8,6 +8,7 @@ import (
 
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
 	"github.com/distributedcompute/cloud/control-plane/internal/config"
+	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 	"github.com/distributedcompute/cloud/control-plane/internal/server"
 )
 
@@ -29,8 +30,11 @@ func main() {
 	// Initialize worker store
 	workerStore := auth.NewWorkerStore()
 
+	// Initialize job store
+	jobStore := jobs.NewStore()
+
 	// Create and start server
-	srv := server.NewServer(tokenManager, ca, workerStore)
+	srv := server.NewServer(tokenManager, ca, workerStore, jobStore)
 
 	// Handle shutdown
 	sigCh := make(chan os.Signal, 1)
