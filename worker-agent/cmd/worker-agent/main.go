@@ -13,6 +13,7 @@ import (
 	"github.com/distributedcompute/cloud/worker-agent/internal/config"
 	"github.com/distributedcompute/cloud/worker-agent/internal/enroll"
 	"github.com/distributedcompute/cloud/worker-agent/internal/heartbeat"
+	"github.com/distributedcompute/cloud/worker-agent/internal/sandbox"
 	"github.com/distributedcompute/cloud/worker-agent/internal/session"
 )
 
@@ -77,6 +78,15 @@ func main() {
 		log.Fatalf("Failed to get session token: %v", err)
 	}
 	log.Printf("Session token acquired")
+
+	// Initialize sandbox manager
+	sandboxMgr, err := sandbox.NewSandboxManager()
+	if err != nil {
+		log.Printf("Warning: Docker not available, sandbox execution disabled: %v", err)
+	} else {
+		log.Printf("Sandbox manager initialized (Docker available: %v)", sandboxMgr.IsAvailable())
+		defer sandboxMgr.Close()
+	}
 
 	// Start heartbeat
 	hbClient, err := heartbeat.NewHeartbeatClient(
