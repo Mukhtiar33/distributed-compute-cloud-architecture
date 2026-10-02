@@ -115,6 +115,10 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 	exec.Command("docker", "rm", "-f", containerName).Run()
 
 	if err != nil {
+		// Check if context was cancelled (timeout)
+		if execCtx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("container execution timed out")
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return &SandboxResult{
 				Stdout:   stdout.String(),

@@ -179,10 +179,10 @@ func TestSandboxManager_FilesystemIsolation(t *testing.T) {
 		t.Skipf("Failed to pull image: %v", err)
 	}
 
-	// Try to read a file outside scratch space
+	// Try to write to /etc/ which should fail with read-only rootfs
 	config := SandboxConfig{
 		Image:   "alpine:latest",
-		Command: []string{"cat", "/etc/passwd"},
+		Command: []string{"sh", "-c", "echo test > /etc/testfile"},
 		Timeout: 10 * time.Second,
 	}
 
@@ -191,9 +191,8 @@ func TestSandboxManager_FilesystemIsolation(t *testing.T) {
 		t.Fatalf("Execute failed: %v", err)
 	}
 
-	// The command should fail or return empty because rootfs is read-only
-	// and /etc/passwd is not mounted
-	if result.Success && result.Stdout != "" {
-		t.Error("expected filesystem isolation to prevent reading /etc/passwd")
+	// The write should fail because rootfs is read-only
+	if result.Success {
+		t.Error("expected filesystem isolation to prevent writing to /etc/")
 	}
 }
