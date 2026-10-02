@@ -12,6 +12,9 @@ type JobStatus string
 
 const (
 	JobStatusIntakeValidated JobStatus = "intake_validated"
+	JobStatusScanning         JobStatus = "scanning"
+	JobStatusScanPassed       JobStatus = "scan_passed"
+	JobStatusScanRejected     JobStatus = "scan_rejected"
 	JobStatusRejected         JobStatus = "rejected"
 )
 

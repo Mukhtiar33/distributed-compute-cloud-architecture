@@ -9,16 +9,21 @@ import (
 
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 	"github.com/distributedcompute/cloud/control-plane/internal/manifest"
+	"github.com/distributedcompute/cloud/control-plane/internal/scanner"
 )
 
 // JobHandler handles job submission and retrieval.
 type JobHandler struct {
 	jobStore *jobs.Store
+	scanner  *scanner.Scanner
 }
 
 // NewJobHandler creates a new job handler.
 func NewJobHandler(store *jobs.Store) *JobHandler {
-	return &JobHandler{jobStore: store}
+	return &JobHandler{
+		jobStore: store,
+		scanner:  scanner.NewScanner(),
+	}
 }
 
 // SubmitJob handles job submission via HTTP.
@@ -107,20 +112,73 @@ func (h *JobHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Job is valid
+	// Job passed manifest validation — now run static scanning
 	job := &jobs.Job{
 		ID:            generateJobID(),
 		Manifest:      manifest,
-		Status:        jobs.JobStatusIntakeValidated,
+		Status:        jobs.JobStatusScanning,
 		SubmittedAt:   time.Now(),
 	}
+	h.jobStore.AddJob(job)
+
+	// Run static scanner
+	scanResult, err := h.scanner.ScanZip(zipData)
+	if err != nil {
+		job.Status = jobs.JobStatusScanRejected
+		job.ValidationError = []string{fmt.Sprintf("scan error: %v", err)}
+		h.jobStore.AddJob(job)
+
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"job_id":            job.ID,
+			"status":            job.Status,
+			"validation_errors": job.ValidationError,
+		})
+		return
+	}
+
+	// Check entrypoint exists
+	entrypointResult, err := h.scanner.ScanManifest(zipData, manifest.Entrypoint)
+	if err != nil {
+		job.Status = jobs.JobStatusScanRejected
+		job.ValidationError = []string{fmt.Sprintf("entrypoint check error: %v", err)}
+		h.jobStore.AddJob(job)
+
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"job_id":            job.ID,
+			"status":            job.Status,
+			"validation_errors": job.ValidationError,
+		})
+		return
+	}
+
+	// Combine scan reasons
+	allReasons := append(scanResult.Reasons, entrypointResult.Reasons...)
+
+	if len(allReasons) > 0 {
+		job.Status = jobs.JobStatusScanRejected
+		job.ValidationError = allReasons
+		h.jobStore.AddJob(job)
+
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"job_id":            job.ID,
+			"status":            job.Status,
+			"validation_errors": allReasons,
+		})
+		return
+	}
+
+	// Job passed all scans
+	job.Status = jobs.JobStatusScanPassed
 	h.jobStore.AddJob(job)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"job_id":  job.ID,
 		"status":  job.Status,
-		"message": "Job accepted",
+		"message": "Job accepted and passed static scanning",
 	})
 }
 
