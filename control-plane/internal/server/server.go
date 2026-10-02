@@ -14,6 +14,7 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/api"
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
+	"github.com/distributedcompute/cloud/control-plane/internal/registry"
 )
 
 // Server is the Control Plane HTTP server with mTLS.
@@ -23,18 +24,20 @@ type Server struct {
 	workerStore  *auth.WorkerStore
 	jobStore     *jobs.Store
 	jobHandler   *api.JobHandler
+	registry     *registry.Registry
 	mux          *http.ServeMux
 	httpServer   *http.Server
 }
 
 // NewServer creates a new Control Plane server.
-func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore *auth.WorkerStore, jobStore *jobs.Store) *Server {
+func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore *auth.WorkerStore, jobStore *jobs.Store, reg *registry.Registry) *Server {
 	s := &Server{
 		tokenManager: tm,
 		ca:           ca,
 		workerStore:  workerStore,
 		jobStore:     jobStore,
 		jobHandler:   api.NewJobHandler(jobStore),
+		registry:     reg,
 		mux:          http.NewServeMux(),
 	}
 	s.setupRoutes()
@@ -52,6 +55,9 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/jobs", s.jobHandler.SubmitJob)
 	s.mux.HandleFunc("/jobs/list", s.jobHandler.ListJobs)
 	s.mux.HandleFunc("/jobs/get", s.jobHandler.GetJob)
+	s.mux.HandleFunc("/environments", s.handleListEnvironments)
+	s.mux.HandleFunc("/environments/get", s.handleGetEnvironment)
+	s.mux.HandleFunc("/environments/pull", s.handlePullEnvironment)
 }
 
 // Start starts the HTTPS server with mTLS.
@@ -296,6 +302,64 @@ func (s *Server) handleGetCA(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.Write(s.ca.GetCACertPEM())
+}
+
+func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	envs := s.registry.List()
+	json.NewEncoder(w).Encode(envs)
+}
+
+func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	env, ok := s.registry.Get(id)
+	if !ok {
+		http.Error(w, "Environment not found", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(env)
+}
+
+func (s *Server) handlePullEnvironment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		EnvironmentID string `json:"environment_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	env, ok := s.registry.Get(req.EnvironmentID)
+	if !ok {
+		http.Error(w, "Environment not found", http.StatusNotFound)
+		return
+	}
+
+	// Return environment info for the worker to pull and cache
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"environment_id": env.ID,
+		"hash":           env.Hash,
+		"content_path":   env.ContentPath,
+	})
 }
 
 // ensure pem import is used
