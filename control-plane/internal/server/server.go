@@ -11,7 +11,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/distributedcompute/cloud/control-plane/internal/api"
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
+	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 )
 
 // Server is the Control Plane HTTP server with mTLS.
@@ -19,16 +21,20 @@ type Server struct {
 	tokenManager *auth.TokenManager
 	ca           *auth.CA
 	workerStore  *auth.WorkerStore
+	jobStore     *jobs.Store
+	jobHandler   *api.JobHandler
 	mux          *http.ServeMux
 	httpServer   *http.Server
 }
 
 // NewServer creates a new Control Plane server.
-func NewServer(tm *auth.TokenManager, ca *auth.CA, store *auth.WorkerStore) *Server {
+func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore *auth.WorkerStore, jobStore *jobs.Store) *Server {
 	s := &Server{
 		tokenManager: tm,
 		ca:           ca,
-		workerStore:  store,
+		workerStore:  workerStore,
+		jobStore:     jobStore,
+		jobHandler:   api.NewJobHandler(jobStore),
 		mux:          http.NewServeMux(),
 	}
 	s.setupRoutes()
@@ -43,6 +49,9 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/revoke", s.handleRevoke)
 	s.mux.HandleFunc("/workers", s.handleListWorkers)
 	s.mux.HandleFunc("/ca", s.handleGetCA)
+	s.mux.HandleFunc("/jobs", s.jobHandler.SubmitJob)
+	s.mux.HandleFunc("/jobs/list", s.jobHandler.ListJobs)
+	s.mux.HandleFunc("/jobs/get", s.jobHandler.GetJob)
 }
 
 // Start starts the HTTPS server with mTLS.
