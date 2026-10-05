@@ -1,0 +1,36 @@
+name: Website CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+
+jobs:
+  build:
+    name: Build & Test Website
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Check pages exist
+        run: |
+          test -f .next/server/app/page.html && echo "Home page OK" || echo "Home page missing"
+          test -f .next/server/app/download/page.html && echo "Download page OK" || echo "Download page missing"
+          test -f .next/server/app/submit/page.html && echo "Submit page OK" || echo "Submit page missing"
+          test -f .next/server/app/account/page.html && echo "Account page OK" || echo "Account page missing"
