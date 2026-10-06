@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  control-plane:
+    build:
+      context: ./control-plane
+      dockerfile: Dockerfile
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./certs:/app/certs:ro
+      - control-plane-data:/app/data
+    environment:
+      - CONTROL_PLANE_PORT=8443
+      - CONTROL_PLANE_BIND=:8443
+    restart: unless-stopped
+    networks:
+      - dcc-network
+
+  # Nginx reverse proxy with TLS termination
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+    networks:
+      - dcc-network
+
+  # Website (Next.js)
+  website:
+    build:
+      context: ./website
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - CONTROL_PLANE_URL=https://control-plane:8443
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+    networks:
+      - dcc-network
+
+volumes:
+  control-plane-data:
+
+networks:
+  dcc-network:
+    driver: bridge
