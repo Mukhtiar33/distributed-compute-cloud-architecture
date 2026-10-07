@@ -18,8 +18,8 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Initialize token manager
-	tokenManager, err := auth.NewTokenManager()
+	// Initialize token manager with persistent key
+	tokenManager, err := auth.NewTokenManager("certs/token-key.pem")
 	if err != nil {
 		log.Fatalf("Failed to initialize token manager: %v", err)
 	}
@@ -80,7 +80,10 @@ func main() {
 		addr = ":8443"
 	}
 
-	if err := srv.Start(addr, "certs/server.crt", "certs/server.key"); err != nil {
+	// Worker mTLS server on port 9443
+	workerAddr := ":9443"
+
+	if err := srv.Start(addr, workerAddr, "certs/server.crt", "certs/server.key"); err != nil {
 		log.Fatalf("Control Plane failed: %v", err)
 		os.Exit(1)
 	}

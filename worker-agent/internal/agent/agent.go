@@ -45,3 +45,10 @@ func (a *Agent) IsRunning() bool {
 	defer a.mu.Unlock()
 	return a.running
 }
+
+// Daemonize runs the agent as a background service.
+// On Linux/macOS, this forks the process into the background.
+// On Windows, this is a no-op (use Windows Services for production).
+func Daemonize() {
+	daemonize()
+}

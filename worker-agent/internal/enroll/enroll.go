@@ -194,11 +194,20 @@ func (c *EnrollClient) GetTLSConfig(caCertPEM []byte) (*tls.Config, error) {
 }
 
 func (c *EnrollClient) loadCert() []byte {
-	// This is a placeholder - in the real implementation, the cert and key
-	// would be stored in the EnrollClient struct after enrollment
-	return nil
+	// Load from credentials directory
+	path := filepath.Join(".worker-credentials", "client_certificate.pem")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 func (c *EnrollClient) loadKey() []byte {
-	return nil
+	path := filepath.Join(".worker-credentials", "client_key.pem")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return data
 }

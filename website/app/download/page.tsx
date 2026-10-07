@@ -37,13 +37,24 @@ export default function DownloadPage() {
         </p>
 
         <div className="mt-12 rounded-xl bg-slate-800/50 p-8">
-          <h2 className="text-2xl font-semibold">System Requirements</h2>
-          <ul className="mt-4 space-y-2 text-slate-300">
-            <li>• Windows 10/11, macOS 12+, or Linux</li>
-            <li>• 512 MB available RAM</li>
-            <li>• 100 MB available disk space</li>
-            <li>• Docker Desktop installed (for sandboxing)</li>
-          </ul>
+          <h2 className="text-2xl font-semibold">How it works</h2>
+          <ol className="mt-4 space-y-3 text-slate-300">
+            <li>1. Download the Worker Agent binary</li>
+            <li>2. Run it — it automatically connects to the platform</li>
+            <li>3. Start earning credits for contributed compute</li>
+          </ol>
+
+          <div className="mt-8 rounded-lg bg-slate-700/50 p-4">
+            <p className="text-sm text-slate-400">
+              <span className="font-semibold text-slate-300">Usage:</span>
+            </p>
+            <code className="mt-2 block text-sm text-green-400">
+              ./worker-agent https://your-laptop-ip:8443
+            </code>
+            <p className="mt-2 text-sm text-slate-400">
+              Replace <code className="text-slate-300">your-laptop-ip</code> with your laptop&apos;s IP address.
+            </p>
+          </div>
 
           <button
             onClick={handleDownload}
@@ -59,12 +70,12 @@ export default function DownloadPage() {
         </div>
 
         <div className="mt-8 rounded-xl bg-slate-800/50 p-8">
-          <h2 className="text-2xl font-semibold">What happens after install?</h2>
-          <ol className="mt-4 space-y-3 text-slate-300">
-            <li>1. Run the downloaded installer</li>
-            <li>2. The agent automatically enrolls with the platform</li>
-            <li>3. Start earning credits for contributed compute</li>
-          </ol>
+          <h2 className="text-2xl font-semibold">System Requirements</h2>
+          <ul className="mt-4 space-y-2 text-slate-300">
+            <li>• Windows 10/11, macOS 12+, or Linux</li>
+            <li>• 512 MB available RAM</li>
+            <li>• 100 MB available disk space</li>
+          </ul>
         </div>
       </div>
     </main>

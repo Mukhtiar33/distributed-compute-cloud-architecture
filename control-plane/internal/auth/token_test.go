@@ -6,7 +6,7 @@ import (
 )
 
 func TestTokenManager_IssueAndValidate(t *testing.T) {
-	tm, err := NewTokenManager()
+	tm, err := NewTokenManager("")
 	if err != nil {
 		t.Fatalf("NewTokenManager failed: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestTokenManager_IssueAndValidate(t *testing.T) {
 }
 
 func TestTokenManager_ExpiredToken(t *testing.T) {
-	tm, err := NewTokenManager()
+	tm, err := NewTokenManager("")
 	if err != nil {
 		t.Fatalf("NewTokenManager failed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestTokenManager_ExpiredToken(t *testing.T) {
 }
 
 func TestTokenManager_InvalidToken(t *testing.T) {
-	tm, err := NewTokenManager()
+	tm, err := NewTokenManager("")
 	if err != nil {
 		t.Fatalf("NewTokenManager failed: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestTokenManager_InvalidToken(t *testing.T) {
 }
 
 func TestTokenManager_TamperedToken(t *testing.T) {
-	tm, err := NewTokenManager()
+	tm, err := NewTokenManager("")
 	if err != nil {
 		t.Fatalf("NewTokenManager failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestTokenManager_TamperedToken(t *testing.T) {
 }
 
 func TestTokenManager_WrongWorkerID(t *testing.T) {
-	tm, err := NewTokenManager()
+	tm, err := NewTokenManager("")
 	if err != nil {
 		t.Fatalf("NewTokenManager failed: %v", err)
 	}

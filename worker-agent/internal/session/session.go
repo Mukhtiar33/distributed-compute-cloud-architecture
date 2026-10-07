@@ -8,42 +8,47 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
 // SessionManager handles session token acquisition and refresh.
+// Session tokens are obtained using mTLS identity, not enrollment credentials.
 type SessionManager struct {
-	controlPlaneURL     string
-	workerID           string
-	enrollmentCredential string
-	httpClient         *http.Client
-	sessionToken       string
-	expiresAt          time.Time
+	controlPlaneURL string
+	workerID       string
+	httpClient     *http.Client
+	sessionToken   string
+	expiresAt      time.Time
+	mu             sync.Mutex
 }
 
 // NewSessionManager creates a new session manager.
-func NewSessionManager(controlPlaneURL, workerID, enrollmentCredential string, caCertPEM []byte) (*SessionManager, error) {
+func NewSessionManager(controlPlaneURL, workerID string, caCertPEM []byte, clientCert tls.Certificate) (*SessionManager, error) {
 	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caCertPEM) {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
 	tlsConfig := &tls.Config{
-		RootCAs:    caPool,
-		MinVersion: tls.VersionTLS12,
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	return &SessionManager{
-		controlPlaneURL:      controlPlaneURL,
-		workerID:            workerID,
-		enrollmentCredential: enrollmentCredential,
-		httpClient:          &http.Client{Transport: transport, Timeout: 10 * time.Second},
+		controlPlaneURL: controlPlaneURL,
+		workerID:       workerID,
+		httpClient:     &http.Client{Transport: transport, Timeout: 10 * time.Second},
 	}, nil
 }
 
 // GetSessionToken returns a valid session token, refreshing if necessary.
 func (sm *SessionManager) GetSessionToken() (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	if sm.sessionToken != "" && time.Now().Before(sm.expiresAt.Add(-30*time.Second)) {
 		return sm.sessionToken, nil
 	}
@@ -54,11 +59,12 @@ func (sm *SessionManager) GetSessionToken() (string, error) {
 	return sm.sessionToken, nil
 }
 
-// refresh obtains a new session token from the Control Plane.
+// refresh obtains a new session token from the Control Plane using mTLS identity.
 func (sm *SessionManager) refresh() error {
+	// Session establishment uses mTLS peer certificate identity
+	// No enrollment credential is sent over the wire
 	reqBody, _ := json.Marshal(map[string]string{
-		"worker_id":             sm.workerID,
-		"enrollment_credential": sm.enrollmentCredential,
+		"worker_id": sm.workerID,
 	})
 
 	resp, err := sm.httpClient.Post(
@@ -91,6 +97,8 @@ func (sm *SessionManager) refresh() error {
 
 // ForceRefresh forces a token refresh on the next GetSessionToken call.
 func (sm *SessionManager) ForceRefresh() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	sm.sessionToken = ""
 	sm.expiresAt = time.Time{}
 }

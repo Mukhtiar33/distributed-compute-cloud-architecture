@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distributed Compute Cloud</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(to bottom, #0f172a, #1e293b); color: white; min-height: 100vh; }
+    nav { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+    nav a { color: #cbd5e1; text-decoration: none; margin-left: 1.5rem; }
+    nav a:hover { color: white; }
+    .logo { font-size: 1.25rem; font-weight: bold; }
+    .container { max-width: 64rem; margin: 0 auto; padding: 2rem; }
+    .hero { text-align: center; padding: 4rem 0; }
+    .hero h1 { font-size: 3rem; font-weight: bold; margin-bottom: 1rem; }
+    .hero p { font-size: 1.25rem; color: #cbd5e1; margin-bottom: 0.5rem; }
+    .buttons { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; }
+    .btn { display: inline-block; padding: 0.75rem 2rem; border-radius: 0.5rem; font-size: 1.125rem; font-weight: 600; text-decoration: none; transition: background 0.2s; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #3b82f6; }
+    .btn-secondary { background: #334155; color: white; }
+    .btn-secondary:hover { background: #475569; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; padding: 2rem 0 4rem; }
+    .card { background: rgba(30, 41, 59, 0.5); border-radius: 0.75rem; padding: 1.5rem; }
+    .card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .card p { color: #cbd5e1; }
+    .download-section { background: rgba(30, 41, 59, 0.5); border-radius: 0.75rem; padding: 2rem; margin-top: 2rem; }
+    .download-section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    .download-section ol { margin-left: 1.5rem; color: #cbd5e1; }
+    .download-section li { margin-bottom: 0.5rem; }
+    .download-section code { background: #334155; padding: 0.25rem 0.5rem; border-radius: 0.25rem; color: #4ade80; }
+    .download-btn { display: inline-block; margin-top: 1.5rem; padding: 0.75rem 2rem; border-radius: 0.5rem; font-size: 1.125rem; font-weight: 600; background: #2563eb; color: white; text-decoration: none; }
+    .download-btn:hover { background: #3b82f6; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">Distributed Compute Cloud</a>
+    <div>
+      <a href="/">Home</a>
+      <a href="/#download">Download</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="hero">
+      <h1>Distributed Compute Cloud</h1>
+      <p>Transform idle personal computers into a secure, trustworthy distributed compute cloud.</p>
+      <p>Consumers submit work without thinking about infrastructure. Providers contribute spare capacity without compromising their machine's safety.</p>
+      <div class="buttons">
+        <a href="/#download" class="btn btn-primary">Download Worker Agent</a>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>For Consumers</h3>
+        <p>Upload your project as a zip file. We handle environment setup, scheduling, and return your results.</p>
+      </div>
+      <div class="card">
+        <h3>For Providers</h3>
+        <p>Install our lightweight agent and earn credits for contributing spare compute capacity.</p>
+      </div>
+      <div class="card">
+        <h3>Secure by Design</h3>
+        <p>Zero Trust architecture with sandboxed execution, mutual TLS, and full isolation between jobs.</p>
+      </div>
+    </div>
+
+    <div class="download-section" id="download">
+      <h2>Download Worker Agent</h2>
+      <ol>
+        <li>Download the Worker Agent binary</li>
+        <li>Run it — it automatically connects to the platform in the background</li>
+        <li>Start earning credits for contributed compute</li>
+      </ol>
+      <p style="margin-top: 1rem; color: #94a3b8;">
+        <strong>Usage:</strong> <code>./worker-agent https://your-laptop-ip:8443</code>
+      </p>
+      <a href="/worker-agent" class="download-btn" download>Download Worker Agent</a>
+      <p style="margin-top: 1rem; color: #64748b; font-size: 0.875rem;">
+        The agent runs as a background service and only uses resources when you're not actively using your machine.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

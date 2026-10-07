@@ -18,7 +18,7 @@ type CA struct {
 	caCert    *x509.Certificate
 	caKey     *rsa.PrivateKey
 	caCertPEM []byte
-	mu        sync.RWMutex
+	mu        sync.Mutex
 	serialNum int64
 }
 
@@ -55,7 +55,7 @@ func NewCA(certPath, keyPath string) (*CA, error) {
 		caCert:    caCert,
 		caKey:     caKey,
 		caCertPEM: certPEM,
-		serialNum: 1,
+		serialNum: time.Now().UnixNano(), // Initialize with timestamp to avoid collisions
 	}, nil
 }
 
@@ -76,8 +76,12 @@ func (ca *CA) SignCSR(csrPEM []byte, workerID string) ([]byte, error) {
 	}
 
 	ca.mu.Lock()
-	serial := big.NewInt(ca.serialNum)
-	ca.serialNum++
+	// Generate random 128-bit serial number to avoid collisions
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		ca.mu.Unlock()
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
 	ca.mu.Unlock()
 
 	template := &x509.Certificate{

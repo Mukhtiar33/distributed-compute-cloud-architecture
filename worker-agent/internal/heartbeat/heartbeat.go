@@ -25,15 +25,16 @@ type HeartbeatClient struct {
 }
 
 // NewHeartbeatClient creates a new heartbeat client.
-func NewHeartbeatClient(controlPlaneURL, workerID, sessionToken string, caCertPEM []byte) (*HeartbeatClient, error) {
+func NewHeartbeatClient(controlPlaneURL, workerID, sessionToken string, caCertPEM []byte, clientCert tls.Certificate) (*HeartbeatClient, error) {
 	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caCertPEM) {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
 	tlsConfig := &tls.Config{
-		RootCAs:    caPool,
-		MinVersion: tls.VersionTLS12,
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	transport := &http.Transport{TLSClientConfig: tlsConfig}

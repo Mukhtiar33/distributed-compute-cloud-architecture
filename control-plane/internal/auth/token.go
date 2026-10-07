@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,26 +36,63 @@ type TokenManager struct {
 	privateKey *rsa.PrivateKey
 	publicKey  *rsa.PublicKey
 	mu         sync.RWMutex
+	keyPath    string
 }
 
-// NewTokenManager creates a TokenManager with a newly generated RSA keypair.
-func NewTokenManager() (*TokenManager, error) {
+// NewTokenManager creates a TokenManager, loading existing key or generating new one.
+func NewTokenManager(keyPath string) (*TokenManager, error) {
+	tm := &TokenManager{keyPath: keyPath}
+
+	// Try to load existing key
+	if keyPath != "" {
+		if _, err := os.Stat(keyPath); err == nil {
+			keyPEM, err := os.ReadFile(keyPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read key file: %w", err)
+			}
+
+			block, _ := pem.Decode(keyPEM)
+			if block == nil {
+				return nil, fmt.Errorf("failed to decode key PEM")
+			}
+
+			privKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse private key: %w", err)
+			}
+
+			tm.privateKey = privKey
+			tm.publicKey = &privKey.PublicKey
+			return tm, nil
+		}
+	}
+
+	// Generate new keypair
 	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
 	}
-	return &TokenManager{
-		privateKey: privKey,
-		publicKey:  &privKey.PublicKey,
-	}, nil
-}
 
-// NewTokenManagerWithKey creates a TokenManager with an existing private key.
-func NewTokenManagerWithKey(privateKey *rsa.PrivateKey) *TokenManager {
-	return &TokenManager{
-		privateKey: privateKey,
-		publicKey:  &privateKey.PublicKey,
+	tm.privateKey = privKey
+	tm.publicKey = &privKey.PublicKey
+
+	// Persist key if path provided
+	if keyPath != "" {
+		if err := os.MkdirAll(getDir(keyPath), 0700); err != nil {
+			return nil, fmt.Errorf("failed to create key directory: %w", err)
+		}
+
+		keyPEM := pem.EncodeToMemory(&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(privKey),
+		})
+
+		if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+			return nil, fmt.Errorf("failed to write key file: %w", err)
+		}
 	}
+
+	return tm, nil
 }
 
 // IssueToken creates a signed token for the given worker.
@@ -118,4 +158,12 @@ func (tm *TokenManager) ValidateToken(token string) (*TokenClaims, error) {
 // GetPublicKey returns the public key for external verification.
 func (tm *TokenManager) GetPublicKey() *rsa.PublicKey {
 	return tm.publicKey
+}
+
+func getDir(path string) string {
+	lastSep := strings.LastIndex(path, "/")
+	if lastSep == -1 {
+		return "."
+	}
+	return path[:lastSep]
 }

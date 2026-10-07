@@ -7,10 +7,9 @@ import (
 
 func TestSessionManager_ForceRefresh(t *testing.T) {
 	sm := &SessionManager{
-		workerID:            "worker-test",
-		enrollmentCredential: "test-cred",
-		sessionToken:        "old-token",
-		expiresAt:           time.Now().Add(5 * time.Minute),
+		workerID:     "worker-test",
+		sessionToken: "old-token",
+		expiresAt:    time.Now().Add(5 * time.Minute),
 	}
 
 	sm.ForceRefresh()
@@ -25,10 +24,9 @@ func TestSessionManager_ForceRefresh(t *testing.T) {
 
 func TestSessionManager_GetSessionTokenCached(t *testing.T) {
 	sm := &SessionManager{
-		workerID:            "worker-test",
-		enrollmentCredential: "test-cred",
-		sessionToken:        "cached-token",
-		expiresAt:           time.Now().Add(5 * time.Minute),
+		workerID:     "worker-test",
+		sessionToken: "cached-token",
+		expiresAt:    time.Now().Add(5 * time.Minute),
 	}
 
 	// Should return cached token without refreshing

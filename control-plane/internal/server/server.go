@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,7 +16,7 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/registry"
 )
 
-// Server is the Control Plane HTTP server with mTLS.
+// Server is the Control Plane HTTP server with separate public and worker listeners.
 type Server struct {
 	tokenManager *auth.TokenManager
 	ca           *auth.CA
@@ -27,6 +26,7 @@ type Server struct {
 	registry     *registry.Registry
 	mux          *http.ServeMux
 	httpServer   *http.Server
+	workerServer *http.Server
 }
 
 // NewServer creates a new Control Plane server.
@@ -45,23 +45,26 @@ func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore *auth.WorkerStore
 }
 
 func (s *Server) setupRoutes() {
+	// Public endpoints (no mTLS required) — consumer-facing
 	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/ca", s.handleGetCA)
 	s.mux.HandleFunc("/enroll", s.handleEnroll)
+	s.mux.HandleFunc("/jobs", s.jobHandler.SubmitJob)
+	s.mux.HandleFunc("/jobs/list", s.jobHandler.ListJobs)
+	s.mux.HandleFunc("/jobs/get", s.jobHandler.GetJob)
+
+	// Worker endpoints (mTLS required) — worker-facing
 	s.mux.HandleFunc("/session", s.handleSession)
 	s.mux.HandleFunc("/heartbeat", s.handleHeartbeat)
 	s.mux.HandleFunc("/revoke", s.handleRevoke)
 	s.mux.HandleFunc("/workers", s.handleListWorkers)
-	s.mux.HandleFunc("/ca", s.handleGetCA)
-	s.mux.HandleFunc("/jobs", s.jobHandler.SubmitJob)
-	s.mux.HandleFunc("/jobs/list", s.jobHandler.ListJobs)
-	s.mux.HandleFunc("/jobs/get", s.jobHandler.GetJob)
 	s.mux.HandleFunc("/environments", s.handleListEnvironments)
 	s.mux.HandleFunc("/environments/get", s.handleGetEnvironment)
 	s.mux.HandleFunc("/environments/pull", s.handlePullEnvironment)
 }
 
-// Start starts the HTTPS server with mTLS.
-func (s *Server) Start(addr, certPath, keyPath string) error {
+// Start starts both the public HTTPS server and the worker mTLS server.
+func (s *Server) Start(addr, workerAddr, certPath, keyPath string) error {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return fmt.Errorf("failed to load server cert: %w", err)
@@ -75,27 +78,51 @@ func (s *Server) Start(addr, certPath, keyPath string) error {
 	caPool := x509.NewCertPool()
 	caPool.AppendCertsFromPEM(caPEM)
 
-	tlsConfig := &tls.Config{
+	// Public server — standard TLS, no client cert required
+	publicTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    caPool,
 		MinVersion:   tls.VersionTLS12,
 	}
 
 	s.httpServer = &http.Server{
 		Addr:      addr,
 		Handler:   s.mux,
-		TLSConfig: tlsConfig,
+		TLSConfig: publicTLSConfig,
 	}
 
-	log.Printf("Control Plane mTLS server starting on %s", addr)
+	// Worker server — mTLS required
+	workerTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    caPool,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	s.workerServer = &http.Server{
+		Addr:      workerAddr,
+		Handler:   s.mux,
+		TLSConfig: workerTLSConfig,
+	}
+
+	// Start worker server in background
+	go func() {
+		log.Printf("Worker mTLS server starting on %s", workerAddr)
+		if err := s.workerServer.ListenAndServeTLS("", ""); err != nil {
+			log.Printf("Worker server error: %v", err)
+		}
+	}()
+
+	log.Printf("Public HTTPS server starting on %s", addr)
 	return s.httpServer.ListenAndServeTLS("", "")
 }
 
-// Stop gracefully shuts down the server.
+// Stop gracefully shuts down both servers.
 func (s *Server) Stop() error {
 	if s.httpServer != nil {
-		return s.httpServer.Close()
+		s.httpServer.Close()
+	}
+	if s.workerServer != nil {
+		s.workerServer.Close()
 	}
 	return nil
 }
@@ -123,8 +150,17 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Input validation
 	if req.WorkerID == "" || req.CSR == "" {
 		http.Error(w, "worker_id and csr are required", http.StatusBadRequest)
+		return
+	}
+	if len(req.WorkerID) > 128 {
+		http.Error(w, "worker_id too long", http.StatusBadRequest)
+		return
+	}
+	if len(req.CSR) > 100000 {
+		http.Error(w, "CSR too large", http.StatusBadRequest)
 		return
 	}
 
@@ -163,29 +199,16 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		WorkerID            string `json:"worker_id"`
-		EnrollmentCredential string `json:"enrollment_credential"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	// Verify mTLS peer certificate
+	if len(r.TLS.PeerCertificates) == 0 {
+		http.Error(w, "mTLS client certificate required", http.StatusUnauthorized)
 		return
 	}
 
-	// Validate enrollment credential
-	claims, err := s.tokenManager.ValidateToken(req.EnrollmentCredential)
-	if err != nil {
-		http.Error(w, "Invalid enrollment credential", http.StatusUnauthorized)
-		return
-	}
-
-	if claims.WorkerID != req.WorkerID {
-		http.Error(w, "Worker ID mismatch", http.StatusUnauthorized)
-		return
-	}
+	workerID := r.TLS.PeerCertificates[0].Subject.CommonName
 
 	// Check worker exists and is not revoked
-	worker, ok := s.workerStore.GetWorker(req.WorkerID)
+	worker, ok := s.workerStore.GetWorker(workerID)
 	if !ok {
 		http.Error(w, "Worker not found", http.StatusNotFound)
 		return
@@ -195,14 +218,14 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue session token
-	sessionToken, err := s.tokenManager.IssueToken(req.WorkerID, "session", auth.SessionTokenLifetime)
+	// Issue session token based on mTLS identity
+	sessionToken, err := s.tokenManager.IssueToken(workerID, "session", auth.SessionTokenLifetime)
 	if err != nil {
 		http.Error(w, "Failed to issue session token", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Worker %s obtained session token", req.WorkerID)
+	log.Printf("Worker %s obtained session token via mTLS", workerID)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"session_token": sessionToken,
@@ -216,30 +239,16 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		WorkerID     string `json:"worker_id"`
-		SessionToken string `json:"session_token"`
-		Status       string `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	// Verify mTLS peer certificate
+	if len(r.TLS.PeerCertificates) == 0 {
+		http.Error(w, "mTLS client certificate required", http.StatusUnauthorized)
 		return
 	}
 
-	// Validate session token
-	claims, err := s.tokenManager.ValidateToken(req.SessionToken)
-	if err != nil {
-		http.Error(w, "Invalid or expired session token", http.StatusUnauthorized)
-		return
-	}
-
-	if claims.WorkerID != req.WorkerID {
-		http.Error(w, "Worker ID mismatch", http.StatusUnauthorized)
-		return
-	}
+	workerID := r.TLS.PeerCertificates[0].Subject.CommonName
 
 	// Check worker is not revoked
-	worker, ok := s.workerStore.GetWorker(req.WorkerID)
+	worker, ok := s.workerStore.GetWorker(workerID)
 	if !ok {
 		http.Error(w, "Worker not found", http.StatusNotFound)
 		return
@@ -250,9 +259,9 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update heartbeat
-	s.workerStore.UpdateWorkerStatus(req.WorkerID, "active")
+	s.workerStore.UpdateWorkerStatus(workerID, "active")
 
-	log.Printf("Heartbeat received from worker %s", req.WorkerID)
+	log.Printf("Heartbeat received from worker %s", workerID)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"accepted": true,
@@ -354,13 +363,9 @@ func (s *Server) handlePullEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return environment info for the worker to pull and cache
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"environment_id": env.ID,
 		"hash":           env.Hash,
 		"content_path":   env.ContentPath,
 	})
 }
-
-// ensure pem import is used
-var _ = pem.EncodeToMemory
