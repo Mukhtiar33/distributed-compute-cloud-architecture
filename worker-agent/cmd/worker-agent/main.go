@@ -108,14 +108,22 @@ func main() {
 		defer sandboxMgr.Close()
 	}
 
-	// Start heartbeat
+	// Start heartbeat with reconnection logic
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := workerClient.Heartbeat("alive"); err != nil {
-				log.Printf("Heartbeat failed: %v", err)
+		for {
+			err := workerClient.Heartbeat("alive")
+			if err != nil {
+				log.Printf("Heartbeat failed: %v — reconnecting...", err)
+				time.Sleep(5 * time.Second)
+				// Try to re-establish session
+				_, err := workerClient.EstablishSession()
+				if err != nil {
+					log.Printf("Session re-establishment failed: %v", err)
+					time.Sleep(10 * time.Second)
+				}
+				continue
 			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
 

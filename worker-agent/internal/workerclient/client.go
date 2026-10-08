@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"time"
 )
@@ -16,6 +18,8 @@ type Client struct {
 	controlPlaneURL string
 	workerID       string
 	httpClient     *http.Client
+	maxRetries     int
+	baseBackoff    time.Duration
 }
 
 // NewClient creates a new worker protocol client.
@@ -36,6 +40,8 @@ func NewClient(controlPlaneURL, workerID string, caCertPEM []byte, clientCert tl
 		controlPlaneURL: controlPlaneURL,
 		workerID:       workerID,
 		httpClient:     &http.Client{Transport: transport, Timeout: 30 * time.Second},
+		maxRetries:     5,
+		baseBackoff:    1 * time.Second,
 	}, nil
 }
 
@@ -71,29 +77,40 @@ func (c *Client) EstablishSession() (string, error) {
 	return result.SessionToken, nil
 }
 
-// Heartbeat sends a heartbeat to the Control Plane.
+// Heartbeat sends a heartbeat to the Control Plane with retry/backoff.
 func (c *Client) Heartbeat(status string) error {
-	reqBody, _ := json.Marshal(map[string]string{
-		"worker_id": c.workerID,
-		"status":    status,
-	})
+	var lastErr error
+	for attempt := 0; attempt < c.maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := c.calculateBackoff(attempt)
+			time.Sleep(backoff)
+		}
 
-	resp, err := c.httpClient.Post(
-		c.controlPlaneURL+"/v1/heartbeat",
-		"application/json",
-		bytes.NewReader(reqBody),
-	)
-	if err != nil {
-		return fmt.Errorf("heartbeat request failed: %w", err)
-	}
-	defer resp.Body.Close()
+		reqBody, _ := json.Marshal(map[string]string{
+			"worker_id": c.workerID,
+			"status":    status,
+		})
 
-	if resp.StatusCode != http.StatusOK {
+		resp, err := c.httpClient.Post(
+			c.controlPlaneURL+"/v1/heartbeat",
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("heartbeat failed (status %d): %s", resp.StatusCode, string(body))
+		lastErr = fmt.Errorf("heartbeat failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	return nil
+	return fmt.Errorf("heartbeat failed after %d retries: %w", c.maxRetries, lastErr)
 }
 
 // ReportResources reports worker resource availability.
@@ -239,4 +256,11 @@ func (c *Client) GetEnvironment(environmentID string) ([]byte, string, error) {
 	}
 
 	return result.Content, result.Hash, nil
+}
+
+// calculateBackoff computes exponential backoff with jitter.
+func (c *Client) calculateBackoff(attempt int) time.Duration {
+	backoff := float64(c.baseBackoff) * math.Pow(2, float64(attempt))
+	jitter := rand.Float64() * float64(c.baseBackoff)
+	return time.Duration(backoff + jitter)
 }
