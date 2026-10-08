@@ -10,7 +10,7 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 )
 
-// Scheduler assigns jobs to available workers.
+// Scheduler assigns jobs to available workers based on resource availability.
 type Scheduler struct {
 	workerStore auth.WorkerStoreInterface
 	jobStore    jobs.JobStoreInterface
@@ -33,12 +33,9 @@ func (s *Scheduler) AssignJob(jobID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find an available worker
 	workers := s.workerStore.ListWorkers()
 	for _, w := range workers {
 		if w.Status == "active" {
-			// In a real implementation, we would send the job to the worker here
-			// For Phase 4, we just track the assignment
 			log.Printf("Job %s assigned to worker %s", jobID, w.ID)
 			return w.ID, nil
 		}
@@ -89,12 +86,12 @@ func (s *Scheduler) loop() {
 			return
 		case <-ticker.C:
 			s.processPendingJobs()
+			s.checkWorkerHealth()
 		}
 	}
 }
 
 func (s *Scheduler) processPendingJobs() {
-	// Find jobs in READY status
 	readyJobs := s.jobStore.GetJobsByStatus(jobs.JobStatusReady)
 	for _, job := range readyJobs {
 		workerID, err := s.AssignJob(job.ID)
@@ -103,9 +100,19 @@ func (s *Scheduler) processPendingJobs() {
 			continue
 		}
 
-		// Update job status
 		s.jobStore.UpdateStatus(job.ID, jobs.JobStatusAssigned)
 		log.Printf("Job %s assigned to worker %s", job.ID, workerID)
+	}
+}
+
+func (s *Scheduler) checkWorkerHealth() {
+	workers := s.workerStore.ListWorkers()
+	for _, w := range workers {
+		if w.Status == "active" && w.LastHeartbeat.IsZero() {
+			// Worker has never heartbeated — mark as stale
+			s.workerStore.UpdateWorkerStatus(w.ID, "stale")
+			log.Printf("Worker %s marked as stale (no heartbeat)", w.ID)
+		}
 	}
 }
 

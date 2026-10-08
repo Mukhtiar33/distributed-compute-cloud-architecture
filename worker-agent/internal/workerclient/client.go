@@ -99,13 +99,13 @@ func (c *Client) Heartbeat(status string) error {
 // ReportResources reports worker resource availability.
 func (c *Client) ReportResources(cpuPercent float64, memoryMB, diskMB int64, activeJobs int32, gpuAvailable bool, gpuModel string) error {
 	reqBody, _ := json.Marshal(map[string]interface{}{
-		"worker_id":      c.workerID,
-		"cpu_percent":    cpuPercent,
-		"memory_mb":      memoryMB,
-		"disk_mb":        diskMB,
-		"active_jobs":    activeJobs,
-		"gpu_available":  gpuAvailable,
-		"gpu_model":      gpuModel,
+		"worker_id":     c.workerID,
+		"cpu_percent":   cpuPercent,
+		"memory_mb":     memoryMB,
+		"disk_mb":       diskMB,
+		"active_jobs":   activeJobs,
+		"gpu_available": gpuAvailable,
+		"gpu_model":     gpuModel,
 	})
 
 	resp, err := c.httpClient.Post(
