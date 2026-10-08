@@ -15,9 +15,8 @@ import (
 	"github.com/distributedcompute/cloud/worker-agent/internal/agent"
 	"github.com/distributedcompute/cloud/worker-agent/internal/config"
 	"github.com/distributedcompute/cloud/worker-agent/internal/enroll"
-	"github.com/distributedcompute/cloud/worker-agent/internal/heartbeat"
 	"github.com/distributedcompute/cloud/worker-agent/internal/sandbox"
-	"github.com/distributedcompute/cloud/worker-agent/internal/session"
+	"github.com/distributedcompute/cloud/worker-agent/internal/workerclient"
 )
 
 func main() {
@@ -82,22 +81,23 @@ func main() {
 		log.Fatalf("Failed to load client certificate: %v", err)
 	}
 
-	// Get session token using mTLS identity
-	sessionMgr, err := session.NewSessionManager(
+	// Create worker client
+	workerClient, err := workerclient.NewClient(
 		cfg.ControlPlaneURL,
 		enrollResult.WorkerID,
 		caCertPEM,
 		clientCert,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create session manager: %v", err)
+		log.Fatalf("Failed to create worker client: %v", err)
 	}
 
-	sessionToken, err := sessionMgr.GetSessionToken()
+	// Establish session using mTLS identity
+	_, err = workerClient.EstablishSession()
 	if err != nil {
-		log.Fatalf("Failed to get session token: %v", err)
+		log.Fatalf("Failed to establish session: %v", err)
 	}
-	log.Printf("Session token acquired via mTLS")
+	log.Printf("Session established via mTLS")
 
 	// Initialize sandbox manager (optional — Docker may not be available)
 	sandboxMgr, err := sandbox.NewSandboxManager()
@@ -109,18 +109,16 @@ func main() {
 	}
 
 	// Start heartbeat
-	hbClient, err := heartbeat.NewHeartbeatClient(
-		cfg.ControlPlaneURL,
-		enrollResult.WorkerID,
-		sessionToken,
-		caCertPEM,
-		clientCert,
-	)
-	if err != nil {
-		log.Fatalf("Failed to create heartbeat client: %v", err)
-	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := workerClient.Heartbeat("alive"); err != nil {
+				log.Printf("Heartbeat failed: %v", err)
+			}
+		}
+	}()
 
-	hbClient.Start()
 	log.Printf("Worker %s connected and heartbeating (background service)", enrollResult.WorkerID)
 
 	// Handle shutdown
@@ -129,7 +127,6 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down Worker Agent...")
-	hbClient.Stop()
 }
 
 func fetchCACert(controlPlaneURL string) ([]byte, error) {

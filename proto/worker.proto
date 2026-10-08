@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package distributedcompute.worker;
+
+option go_package = "github.com/distributedcompute/cloud/proto/worker";
+
+service WorkerService {
+  rpc EstablishSession(SessionRequest) returns (SessionResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc ReportResources(ResourceReport) returns (ResourceAck);
+  rpc AssignJob(JobAssignment) returns (AssignmentAck);
+  rpc JobStatusUpdate(StatusUpdate) returns (StatusAck);
+  rpc SubmitResult(ResultSubmission) returns (ResultAck);
+  rpc CancelJob(CancelRequest) returns (CancelAck);
+  rpc GetEnvironment(EnvironmentRequest) returns (EnvironmentResponse);
+}
+
+message SessionRequest {
+  string worker_id = 1;
+}
+
+message SessionResponse {
+  string session_token = 1;
+  int64 expires_at = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  string session_token = 2;
+  string status = 3;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message ResourceReport {
+  string worker_id = 1;
+  string session_token = 2;
+  double cpu_percent = 3;
+  int64 memory_mb = 4;
+  int64 disk_mb = 5;
+  int32 active_jobs = 6;
+  bool gpu_available = 7;
+  string gpu_model = 8;
+}
+
+message ResourceAck {
+  bool accepted = 1;
+}
+
+message JobAssignment {
+  string job_id = 1;
+  string worker_id = 2;
+  string environment = 3;
+  bytes payload = 4;
+  string entrypoint = 5;
+  repeated string inputs = 6;
+}
+
+message AssignmentAck {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message StatusUpdate {
+  string job_id = 1;
+  string worker_id = 2;
+  string status = 3;
+  string message = 4;
+}
+
+message StatusAck {
+  bool accepted = 1;
+}
+
+message ResultSubmission {
+  string job_id = 1;
+  string worker_id = 2;
+  bytes result_data = 3;
+  int32 exit_code = 4;
+  string stdout = 5;
+  string stderr = 6;
+}
+
+message ResultAck {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message CancelRequest {
+  string job_id = 1;
+  string worker_id = 2;
+}
+
+message CancelAck {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message EnvironmentRequest {
+  string environment_id = 1;
+  string worker_id = 2;
+}
+
+message EnvironmentResponse {
+  string environment_id = 1;
+  string hash = 2;
+  bytes content = 3;
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/distributedcompute/cloud/control-plane/internal/registry"
 	"github.com/distributedcompute/cloud/control-plane/internal/scheduler"
 	"github.com/distributedcompute/cloud/control-plane/internal/server"
+	"github.com/distributedcompute/cloud/control-plane/internal/workerproto"
 )
 
 func main() {
@@ -86,8 +87,11 @@ func main() {
 		Metadata:  map[string]string{"description": "Node.js 20 base environment"},
 	})
 
-	// Create and start server
+	// Create and start public server
 	srv := server.NewServer(tokenManager, ca, workerStore, jobStore, envRegistry)
+
+	// Create and start worker protocol server
+	workerServer := workerproto.NewWorkerServer(tokenManager, workerStore)
 
 	// Handle shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -106,6 +110,13 @@ func main() {
 
 	// Worker mTLS server on port 9443
 	workerAddr := ":9443"
+
+	// Start worker server in background
+	go func() {
+		if err := workerServer.Start(workerAddr, "certs/server.crt", "certs/server.key"); err != nil {
+			log.Printf("Worker server error: %v", err)
+		}
+	}()
 
 	if err := srv.Start(addr, workerAddr, "certs/server.crt", "certs/server.key"); err != nil {
 		log.Fatalf("Control Plane failed: %v", err)
