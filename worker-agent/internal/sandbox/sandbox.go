@@ -74,12 +74,14 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 		return nil, fmt.Errorf("failed to create scratch dir: %w", err)
 	}
 
-	containerName := fmt.Sprintf("sandbox-%d", time.Now().UnixNano())
+	containerName := fmt.Sprintf("dcc-sandbox-%d", time.Now().UnixNano())
 
 	args := []string{
 		"run",
 		"--rm",
 		"--name", containerName,
+		"--label", "dcc.managed=true",
+		"--label", fmt.Sprintf("dcc.created=%d", time.Now().Unix()),
 		"--network", config.NetworkMode,
 		"--memory", fmt.Sprintf("%dm", config.MemoryBytes/(1024*1024)),
 		"--cpu-shares", fmt.Sprintf("%d", config.CPUShares),
@@ -112,10 +114,10 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 
 	err := cmd.Run()
 
+	// Clean up container (in case it wasn't removed due to timeout)
 	exec.Command("docker", "rm", "-f", containerName).Run()
 
 	if err != nil {
-		// Check if context was cancelled (timeout)
 		if execCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("container execution timed out")
 		}
@@ -158,13 +160,14 @@ func (sm *SandboxManager) EnsureImage(ctx context.Context, image string) error {
 	return cmd.Run()
 }
 
-// Cleanup removes all stopped containers.
+// Cleanup removes only DCC-managed containers (labeled with dcc.managed=true).
 func (sm *SandboxManager) Cleanup(ctx context.Context) error {
 	if !sm.available {
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", "container", "prune", "-f")
+	// Only remove containers created by this platform
+	cmd := exec.CommandContext(ctx, "docker", "container", "prune", "-f", "--filter", "label=dcc.managed=true")
 	return cmd.Run()
 }
 

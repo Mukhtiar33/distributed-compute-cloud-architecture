@@ -37,13 +37,11 @@ type SandboxManager struct {
 
 // NewSandboxManager creates a new sandbox manager.
 func NewSandboxManager() (*SandboxManager, error) {
-	// Check if Docker is available
 	_, err := exec.LookPath("docker")
 	if err != nil {
 		return &SandboxManager{available: false}, nil
 	}
 
-	// Verify Docker daemon is running
 	cmd := exec.Command("docker", "info")
 	if err := cmd.Run(); err != nil {
 		return &SandboxManager{available: false}, nil
@@ -68,24 +66,22 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 		return nil, fmt.Errorf("Docker not available")
 	}
 
-	// Default network mode: none (no network access)
 	if config.NetworkMode == "" {
 		config.NetworkMode = "none"
 	}
 
-	// Create scratch directory on host
 	if err := os.MkdirAll(scratchDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create scratch dir: %w", err)
 	}
 
-	// Generate unique container name
-	containerName := fmt.Sprintf("sandbox-%d", time.Now().UnixNano())
+	containerName := fmt.Sprintf("dcc-sandbox-%d", time.Now().UnixNano())
 
-	// Build docker run args
 	args := []string{
 		"run",
 		"--rm",
 		"--name", containerName,
+		"--label", "dcc.managed=true",
+		"--label", fmt.Sprintf("dcc.created=%d", time.Now().Unix()),
 		"--network", config.NetworkMode,
 		"--memory", fmt.Sprintf("%dm", config.MemoryBytes/(1024*1024)),
 		"--cpu-shares", fmt.Sprintf("%d", config.CPUShares),
@@ -96,16 +92,13 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 		"-w", config.WorkingDir,
 	}
 
-	// Add environment variables
 	for _, env := range config.Env {
 		args = append(args, "-e", env)
 	}
 
-	// Add image and command
 	args = append(args, config.Image)
 	args = append(args, config.Command...)
 
-	// Create context with timeout
 	execCtx := ctx
 	if config.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -113,7 +106,6 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 		defer cancel()
 	}
 
-	// Execute container
 	cmd := exec.CommandContext(execCtx, "docker", args...)
 
 	var stdout, stderr strings.Builder
@@ -126,7 +118,6 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 	exec.Command("docker", "rm", "-f", containerName).Run()
 
 	if err != nil {
-		// Check if context was cancelled (timeout)
 		if execCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("container execution timed out")
 		}
@@ -155,7 +146,6 @@ func (sm *SandboxManager) EnsureImage(ctx context.Context, image string) error {
 		return fmt.Errorf("Docker not available")
 	}
 
-	// Check if image exists locally
 	cmd := exec.CommandContext(ctx, "docker", "images", "-q", image)
 	output, err := cmd.Output()
 	if err != nil {
@@ -163,22 +153,21 @@ func (sm *SandboxManager) EnsureImage(ctx context.Context, image string) error {
 	}
 
 	if len(output) > 0 {
-		return nil // Image already exists
+		return nil
 	}
 
-	// Pull image
 	cmd = exec.CommandContext(ctx, "docker", "pull", image)
 	return cmd.Run()
 }
 
-// Cleanup removes all stopped containers.
+// Cleanup removes only DCC-managed containers (labeled with dcc.managed=true).
 func (sm *SandboxManager) Cleanup(ctx context.Context) error {
 	if !sm.available {
 		return nil
 	}
 
-	// Remove all stopped containers
-	cmd := exec.CommandContext(ctx, "docker", "container", "prune", "-f")
+	// Only remove containers created by this platform
+	cmd := exec.CommandContext(ctx, "docker", "container", "prune", "-f", "--filter", "label=dcc.managed=true")
 	return cmd.Run()
 }
 
