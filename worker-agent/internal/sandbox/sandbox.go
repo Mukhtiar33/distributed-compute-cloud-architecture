@@ -20,6 +20,7 @@ type SandboxConfig struct {
 	MemoryBytes int64             // Memory limit in bytes
 	CPUShares   int64             // CPU shares
 	Timeout     time.Duration     // Execution timeout
+	PIDsLimit   int64             // Maximum number of processes
 }
 
 // SandboxResult contains the output of a sandboxed execution.
@@ -88,6 +89,7 @@ func (sm *SandboxManager) Execute(ctx context.Context, config SandboxConfig, scr
 		"--read-only",
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges:true",
+		"--pids-limit", fmt.Sprintf("%d", config.PIDsLimit),
 		"-v", fmt.Sprintf("%s:/scratch", scratchDir),
 		"-w", config.WorkingDir,
 	}
