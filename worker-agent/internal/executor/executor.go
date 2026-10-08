@@ -14,6 +14,15 @@ import (
 	"github.com/distributedcompute/cloud/worker-agent/internal/sandbox"
 )
 
+const (
+	// MaxFileSize is the maximum size of a single decompressed file (25MB)
+	MaxFileSize = 25 * 1024 * 1024
+	// MaxTotalSize is the maximum total decompressed size (100MB)
+	MaxTotalSize = 100 * 1024 * 1024
+	// MaxCompressionRatio is the maximum allowed compression ratio
+	MaxCompressionRatio = 100
+)
+
 // Job represents a job to be executed.
 type Job struct {
 	ID         string            `json:"id"`
@@ -54,8 +63,8 @@ func (e *Executor) Execute(ctx context.Context, job Job) (*JobResult, error) {
 	}
 	defer os.RemoveAll(scratchDir) // Clean up after execution
 
-	// Extract job payload to scratch dir
-	if err := extractZip(job.Payload, scratchDir); err != nil {
+	// Extract job payload to scratch dir with safety checks
+	if err := extractZipSafe(job.Payload, scratchDir); err != nil {
 		return nil, fmt.Errorf("failed to extract job payload: %w", err)
 	}
 
@@ -111,20 +120,38 @@ func determineCommand(manifest map[string]interface{}) []string {
 	return []string{"/bin/sh", "-c", entrypoint}
 }
 
-func extractZip(data []byte, dest string) error {
+// extractZipSafe extracts a zip file with path traversal and zip bomb protection.
+func extractZipSafe(data []byte, dest string) error {
 	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return err
 	}
+
+	var totalUncompressed int64
 
 	for _, file := range zipReader.File {
 		if file.FileInfo().IsDir() {
 			continue
 		}
 
+		// Check for zip bomb
+		totalUncompressed += int64(file.UncompressedSize64)
+		if totalUncompressed > MaxTotalSize {
+			return fmt.Errorf("zip bomb: total uncompressed size %d exceeds limit %d", totalUncompressed, MaxTotalSize)
+		}
+
+		// Check compression ratio
+		if file.CompressedSize64 > 0 {
+			ratio := float64(file.UncompressedSize64) / float64(file.CompressedSize64)
+			if ratio > MaxCompressionRatio {
+				return fmt.Errorf("zip bomb: compression ratio %.1fx exceeds limit %dx", ratio, MaxCompressionRatio)
+			}
+		}
+
+		// Check for path traversal
 		path := filepath.Join(dest, file.Name)
 		if !strings.HasPrefix(path, filepath.Clean(dest)+string(os.PathSeparator)) {
-			return fmt.Errorf("invalid file path: %s", file.Name)
+			return fmt.Errorf("path traversal detected: %s", file.Name)
 		}
 
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -136,13 +163,15 @@ func extractZip(data []byte, dest string) error {
 			return err
 		}
 
+		// Limit reader to prevent zip bombs
+		limitedReader := io.LimitReader(rc, MaxFileSize)
 		out, err := os.Create(path)
 		if err != nil {
 			rc.Close()
 			return err
 		}
 
-		_, err = io.Copy(out, rc)
+		_, err = io.Copy(out, limitedReader)
 		out.Close()
 		rc.Close()
 		if err != nil {

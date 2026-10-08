@@ -10,6 +10,15 @@ import (
 	"strings"
 )
 
+const (
+	// MaxFileSize is the maximum size of a single decompressed file (25MB)
+	MaxFileSize = 25 * 1024 * 1024
+	// MaxTotalSize is the maximum total decompressed size (100MB)
+	MaxTotalSize = 100 * 1024 * 1024
+	// MaxCompressionRatio is the maximum allowed compression ratio
+	MaxCompressionRatio = 100
+)
+
 // ScanResult represents the outcome of a static scan.
 type ScanResult struct {
 	Passed  bool     `json:"passed"`
@@ -18,7 +27,7 @@ type ScanResult struct {
 
 // Scanner performs static analysis on job payloads.
 type Scanner struct {
-	vulnDB      *VulnerabilityDB
+	vulnDB        *VulnerabilityDB
 	patternChecks []PatternCheck
 }
 
@@ -38,10 +47,31 @@ func (s *Scanner) ScanZip(zipData []byte) (*ScanResult, error) {
 	}
 
 	var allReasons []string
+	var totalUncompressed int64
 
 	for _, file := range zipReader.File {
 		if file.FileInfo().IsDir() {
 			continue
+		}
+
+		// Check for zip bomb
+		totalUncompressed += int64(file.UncompressedSize64)
+		if totalUncompressed > MaxTotalSize {
+			return &ScanResult{
+				Passed:  false,
+				Reasons: []string{fmt.Sprintf("zip bomb: total uncompressed size %d exceeds limit %d", totalUncompressed, MaxTotalSize)},
+			}, nil
+		}
+
+		// Check compression ratio
+		if file.CompressedSize64 > 0 {
+			ratio := float64(file.UncompressedSize64) / float64(file.CompressedSize64)
+			if ratio > MaxCompressionRatio {
+				return &ScanResult{
+					Passed:  false,
+					Reasons: []string{fmt.Sprintf("zip bomb: compression ratio %.1fx exceeds limit %dx", ratio, MaxCompressionRatio)},
+				}, nil
+			}
 		}
 
 		rc, err := file.Open()
@@ -49,10 +79,20 @@ func (s *Scanner) ScanZip(zipData []byte) (*ScanResult, error) {
 			return nil, fmt.Errorf("failed to open file %s: %w", file.Name, err)
 		}
 
-		data, err := io.ReadAll(rc)
+		// Limit reader to prevent zip bombs
+		limitedReader := io.LimitReader(rc, MaxFileSize)
+		data, err := io.ReadAll(limitedReader)
 		rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", file.Name, err)
+		}
+
+		// Check if file was truncated (zip bomb)
+		if int64(len(data)) >= MaxFileSize {
+			return &ScanResult{
+				Passed:  false,
+				Reasons: []string{fmt.Sprintf("file %s exceeds maximum size %d", file.Name, MaxFileSize)},
+			}, nil
 		}
 
 		// Check dependencies
@@ -186,10 +226,10 @@ type VulnerabilityDB struct {
 
 // Vulnerability represents a known vulnerable package version.
 type Vulnerability struct {
-	Package   string   `json:"package"`
-	Versions  []string `json:"versions"`
-	Severity  string   `json:"severity"`
-	Summary   string   `json:"summary"`
+	Package  string   `json:"package"`
+	Versions []string `json:"versions"`
+	Severity string   `json:"severity"`
+	Summary  string   `json:"summary"`
 }
 
 // NewVulnerabilityDB creates a vulnerability database with known vulnerable packages.
