@@ -62,7 +62,7 @@ func TestScheduler_Stats(t *testing.T) {
 
 	jobStore.AddJob(&jobs.Job{
 		ID:     "job-1",
-		Status: jobs.JobStatusScanPassed,
+		Status: jobs.JobStatusReady,
 		Manifest: &manifest.Manifest{
 			JobType: manifest.JobTypeSingle,
 		},

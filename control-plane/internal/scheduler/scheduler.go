@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -14,6 +15,8 @@ type Scheduler struct {
 	workerStore auth.WorkerStoreInterface
 	jobStore    jobs.JobStoreInterface
 	mu          sync.RWMutex
+	running     bool
+	stopCh      chan struct{}
 }
 
 // NewScheduler creates a new scheduler.
@@ -21,11 +24,11 @@ func NewScheduler(workerStore auth.WorkerStoreInterface, jobStore jobs.JobStoreI
 	return &Scheduler{
 		workerStore: workerStore,
 		jobStore:    jobStore,
+		stopCh:      make(chan struct{}),
 	}
 }
 
 // AssignJob assigns a job to an available worker.
-// For Phase 4: simple "any available worker" — no ranking logic yet.
 func (s *Scheduler) AssignJob(jobID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -36,6 +39,7 @@ func (s *Scheduler) AssignJob(jobID string) (string, error) {
 		if w.Status == "active" {
 			// In a real implementation, we would send the job to the worker here
 			// For Phase 4, we just track the assignment
+			log.Printf("Job %s assigned to worker %s", jobID, w.ID)
 			return w.ID, nil
 		}
 	}
@@ -45,29 +49,68 @@ func (s *Scheduler) AssignJob(jobID string) (string, error) {
 
 // GetJobAssignment returns the worker assigned to a job.
 func (s *Scheduler) GetJobAssignment(jobID string) (string, error) {
-	// For Phase 4, we don't track assignments persistently
-	// This would be implemented in a later phase
-	return "", fmt.Errorf("job assignment tracking not implemented yet")
+	job, ok := s.jobStore.GetJob(jobID)
+	if !ok {
+		return "", fmt.Errorf("job not found")
+	}
+	return job.WorkerID, nil
 }
 
 // Start begins the scheduler's background processing loop.
 func (s *Scheduler) Start() {
-	// For Phase 4, the scheduler is minimal
-	// In later phases, this would include:
-	// - Monitoring job queue
-	// - Assigning jobs to workers
-	// - Handling worker failures
-	// - Reassigning failed jobs
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return
+	}
+	s.running = true
+	s.mu.Unlock()
+
+	go s.loop()
 }
 
 // Stop halts the scheduler.
 func (s *Scheduler) Stop() {
-	// Cleanup resources
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.running {
+		s.running = false
+		close(s.stopCh)
+	}
+}
+
+func (s *Scheduler) loop() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.processPendingJobs()
+		}
+	}
+}
+
+func (s *Scheduler) processPendingJobs() {
+	// Find jobs in READY status
+	readyJobs := s.jobStore.GetJobsByStatus(jobs.JobStatusReady)
+	for _, job := range readyJobs {
+		workerID, err := s.AssignJob(job.ID)
+		if err != nil {
+			log.Printf("Failed to assign job %s: %v", job.ID, err)
+			continue
+		}
+
+		// Update job status
+		s.jobStore.UpdateStatus(job.ID, jobs.JobStatusAssigned)
+		log.Printf("Job %s assigned to worker %s", job.ID, workerID)
+	}
 }
 
 // HealthCheck performs a health check on the scheduler.
 func (s *Scheduler) HealthCheck() error {
-	// For Phase 4, always healthy
 	return nil
 }
 
@@ -98,7 +141,7 @@ func countActiveWorkers(workers []*auth.Worker) int {
 func countPendingJobs(jobList []*jobs.Job) int {
 	count := 0
 	for _, j := range jobList {
-		if j.Status == jobs.JobStatusScanPassed {
+		if j.Status == jobs.JobStatusReady {
 			count++
 		}
 	}

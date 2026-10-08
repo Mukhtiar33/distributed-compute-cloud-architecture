@@ -1,10 +1,14 @@
 package executor
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/distributedcompute/cloud/worker-agent/internal/sandbox"
@@ -108,13 +112,67 @@ func determineCommand(manifest map[string]interface{}) []string {
 }
 
 func extractZip(data []byte, dest string) error {
-	// For Phase 4, we use a simple extraction
-	// In production, this would use archive/zip
+	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+
+	for _, file := range zipReader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		path := filepath.Join(dest, file.Name)
+		if !strings.HasPrefix(path, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid file path: %s", file.Name)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		out, err := os.Create(path)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+
+		_, err = io.Copy(out, rc)
+		out.Close()
+		rc.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func collectOutput(scratchDir string) []byte {
-	// For Phase 4, we collect output from scratch dir
-	// In production, this would create a zip of output files
-	return nil
+	// Create a zip of all files in scratch dir
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+
+	filepath.Walk(scratchDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(scratchDir, path)
+		f, _ := w.Create(relPath)
+		data, _ := os.ReadFile(path)
+		f.Write(data)
+		return nil
+	})
+
+	w.Close()
+	return buf.Bytes()
 }

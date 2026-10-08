@@ -12,7 +12,7 @@ func TestStore_AddAndGet(t *testing.T) {
 	job := &Job{
 		ID:          "job-1",
 		Manifest:    &manifest.Manifest{JobType: manifest.JobTypeSingle, Environment: "python-3.11", Entrypoint: "main.py", ExpectedOutput: "result.zip"},
-		Status:      JobStatusIntakeValidated,
+		Status:      JobStatusSubmitted,
 		SubmittedAt: time.Now(),
 	}
 
@@ -37,7 +37,7 @@ func TestStore_GetNonexistent(t *testing.T) {
 
 func TestStore_ListJobs(t *testing.T) {
 	store := NewStore()
-	store.AddJob(&Job{ID: "job-1", Status: JobStatusIntakeValidated, SubmittedAt: time.Now()})
+	store.AddJob(&Job{ID: "job-1", Status: JobStatusSubmitted, SubmittedAt: time.Now()})
 	store.AddJob(&Job{ID: "job-2", Status: JobStatusRejected, SubmittedAt: time.Now()})
 
 	jobs := store.ListJobs()

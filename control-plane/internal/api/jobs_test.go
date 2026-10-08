@@ -51,7 +51,7 @@ func TestSubmitJob_ValidSingle(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&result)
-	if result["status"] != "scan_passed" {
+	if result["status"] != "ready" {
 		t.Errorf("expected status scan_passed, got %s", result["status"])
 	}
 }
@@ -83,7 +83,7 @@ func TestSubmitJob_ValidParallel(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&result)
-	if result["status"] != "scan_passed" {
+	if result["status"] != "ready" {
 		t.Errorf("expected status scan_passed, got %s", result["status"])
 	}
 }

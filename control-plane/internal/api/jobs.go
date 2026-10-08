@@ -114,17 +114,17 @@ func (h *JobHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
 
 	// Job passed manifest validation — now run static scanning
 	job := &jobs.Job{
-		ID:            generateJobID(),
-		Manifest:      manifest,
-		Status:        jobs.JobStatusScanning,
-		SubmittedAt:   time.Now(),
+		ID:          generateJobID(),
+		Manifest:    manifest,
+		Status:      jobs.JobStatusScanning,
+		SubmittedAt: time.Now(),
 	}
 	h.jobStore.AddJob(job)
 
 	// Run static scanner
 	scanResult, err := h.scanner.ScanZip(zipData)
 	if err != nil {
-		job.Status = jobs.JobStatusScanRejected
+		job.Status = jobs.JobStatusRejected
 		job.ValidationError = []string{fmt.Sprintf("scan error: %v", err)}
 		h.jobStore.AddJob(job)
 
@@ -140,7 +140,7 @@ func (h *JobHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
 	// Check entrypoint exists
 	entrypointResult, err := h.scanner.ScanManifest(zipData, manifest.Entrypoint)
 	if err != nil {
-		job.Status = jobs.JobStatusScanRejected
+		job.Status = jobs.JobStatusRejected
 		job.ValidationError = []string{fmt.Sprintf("entrypoint check error: %v", err)}
 		h.jobStore.AddJob(job)
 
@@ -157,7 +157,7 @@ func (h *JobHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
 	allReasons := append(scanResult.Reasons, entrypointResult.Reasons...)
 
 	if len(allReasons) > 0 {
-		job.Status = jobs.JobStatusScanRejected
+		job.Status = jobs.JobStatusRejected
 		job.ValidationError = allReasons
 		h.jobStore.AddJob(job)
 
@@ -170,8 +170,8 @@ func (h *JobHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Job passed all scans
-	job.Status = jobs.JobStatusScanPassed
+	// Job passed all scans — mark as ready for scheduling
+	job.Status = jobs.JobStatusReady
 	h.jobStore.AddJob(job)
 
 	w.WriteHeader(http.StatusCreated)
@@ -213,6 +213,35 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 	jobs := h.jobStore.ListJobs()
 	json.NewEncoder(w).Encode(jobs)
+}
+
+// DownloadResult downloads a completed job's result.
+func (h *JobHandler) DownloadResult(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	jobID := r.URL.Query().Get("id")
+	if jobID == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	job, ok := h.jobStore.GetJob(jobID)
+	if !ok {
+		http.Error(w, "Job not found", http.StatusNotFound)
+		return
+	}
+
+	if job.Status != jobs.JobStatusCompleted {
+		http.Error(w, "Job not completed", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-result.zip\"", jobID))
+	w.Write(job.ResultData)
 }
 
 func generateJobID() string {
