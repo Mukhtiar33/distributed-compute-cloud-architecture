@@ -18,27 +18,29 @@ import (
 
 // Server is the Control Plane HTTP server with separate public and worker listeners.
 type Server struct {
-	tokenManager *auth.TokenManager
-	ca           *auth.CA
-	workerStore  auth.WorkerStoreInterface
-	jobStore     jobs.JobStoreInterface
-	jobHandler   *api.JobHandler
-	registry     *registry.Registry
-	mux          *http.ServeMux
-	httpServer   *http.Server
-	workerServer *http.Server
+	tokenManager    *auth.TokenManager
+	ca              *auth.CA
+	workerStore     auth.WorkerStoreInterface
+	jobStore        jobs.JobStoreInterface
+	jobHandler      *api.JobHandler
+	consumerHandler *api.ConsumerHandler
+	registry        *registry.Registry
+	mux             *http.ServeMux
+	httpServer      *http.Server
+	workerServer    *http.Server
 }
 
 // NewServer creates a new Control Plane server.
 func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore auth.WorkerStoreInterface, jobStore jobs.JobStoreInterface, reg *registry.Registry) *Server {
 	s := &Server{
-		tokenManager: tm,
-		ca:           ca,
-		workerStore:  workerStore,
-		jobStore:     jobStore,
-		jobHandler:   api.NewJobHandler(jobStore),
-		registry:     reg,
-		mux:          http.NewServeMux(),
+		tokenManager:    tm,
+		ca:              ca,
+		workerStore:     workerStore,
+		jobStore:        jobStore,
+		jobHandler:      api.NewJobHandler(jobStore),
+		consumerHandler: api.NewConsumerHandler(jobStore),
+		registry:        reg,
+		mux:             http.NewServeMux(),
 	}
 	s.setupRoutes()
 	return s
@@ -52,6 +54,10 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/jobs", s.jobHandler.SubmitJob)
 	s.mux.HandleFunc("/jobs/list", s.jobHandler.ListJobs)
 	s.mux.HandleFunc("/jobs/get", s.jobHandler.GetJob)
+	s.mux.HandleFunc("/jobs/download", s.consumerHandler.DownloadResult)
+	s.mux.HandleFunc("/jobs/status", s.consumerHandler.GetJobStatus)
+	s.mux.HandleFunc("/jobs/cancel", s.consumerHandler.CancelJob)
+	s.mux.HandleFunc("/jobs/metadata", s.consumerHandler.GetJobMetadata)
 
 	// Worker endpoints (mTLS required) — worker-facing
 	s.mux.HandleFunc("/session", s.handleSession)
