@@ -14,12 +14,12 @@ import (
 
 // JobHandler handles job submission and retrieval.
 type JobHandler struct {
-	jobStore *jobs.Store
+	jobStore jobs.JobStoreInterface
 	scanner  *scanner.Scanner
 }
 
 // NewJobHandler creates a new job handler.
-func NewJobHandler(store *jobs.Store) *JobHandler {
+func NewJobHandler(store jobs.JobStoreInterface) *JobHandler {
 	return &JobHandler{
 		jobStore: store,
 		scanner:  scanner.NewScanner(),

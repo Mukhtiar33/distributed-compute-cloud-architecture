@@ -4,11 +4,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/distributedcompute/cloud/control-plane/internal/auth"
+	"github.com/distributedcompute/cloud/control-plane/internal/batch"
 	"github.com/distributedcompute/cloud/control-plane/internal/config"
+	"github.com/distributedcompute/cloud/control-plane/internal/db"
 	"github.com/distributedcompute/cloud/control-plane/internal/jobs"
 	"github.com/distributedcompute/cloud/control-plane/internal/registry"
 	"github.com/distributedcompute/cloud/control-plane/internal/scheduler"
@@ -17,6 +20,28 @@ import (
 
 func main() {
 	cfg := config.Load()
+
+	// Initialize database
+	dbCfg := db.Config{
+		Host:     getEnv("DB_HOST", "localhost"),
+		Port:     getEnvInt("DB_PORT", 5432),
+		User:     getEnv("DB_USER", "postgres"),
+		Password: getEnv("DB_PASSWORD", "postgres"),
+		DBName:   getEnv("DB_NAME", "distributed_compute_cloud"),
+		SSLMode:  getEnv("DB_SSLMODE", "disable"),
+	}
+
+	database, err := db.New(dbCfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer database.Close()
+
+	// Run migrations
+	if err := database.Migrate(); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+	log.Println("Database migrations completed")
 
 	// Initialize token manager with persistent key
 	tokenManager, err := auth.NewTokenManager("certs/token-key.pem")
@@ -30,11 +55,10 @@ func main() {
 		log.Fatalf("Failed to initialize CA: %v", err)
 	}
 
-	// Initialize worker store
-	workerStore := auth.NewWorkerStore()
-
-	// Initialize job store
-	jobStore := jobs.NewStore()
+	// Initialize database-backed stores
+	workerStore := auth.NewWorkerStoreDB(database)
+	jobStore := jobs.NewStoreDB(database)
+	_ = batch.NewManagerDB(database) // Used in Phase R4
 
 	// Initialize scheduler
 	sched := scheduler.NewScheduler(workerStore, jobStore)
@@ -87,4 +111,20 @@ func main() {
 		log.Fatalf("Control Plane failed: %v", err)
 		os.Exit(1)
 	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return defaultValue
 }

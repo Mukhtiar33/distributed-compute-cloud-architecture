@@ -33,6 +33,17 @@ func (s *WorkerStore) AddWorker(w *Worker) {
 	s.workers[w.ID] = w
 }
 
+// IsWorkerRevoked checks if a worker has been revoked.
+func (s *WorkerStore) IsWorkerRevoked(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	w, ok := s.workers[id]
+	if !ok {
+		return false
+	}
+	return w.Status == "revoked"
+}
+
 // GetWorker retrieves a worker by ID.
 func (s *WorkerStore) GetWorker(id string) (*Worker, bool) {
 	s.mu.RLock()

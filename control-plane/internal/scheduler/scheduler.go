@@ -11,13 +11,13 @@ import (
 
 // Scheduler assigns jobs to available workers.
 type Scheduler struct {
-	workerStore *auth.WorkerStore
-	jobStore    *jobs.Store
+	workerStore auth.WorkerStoreInterface
+	jobStore    jobs.JobStoreInterface
 	mu          sync.RWMutex
 }
 
 // NewScheduler creates a new scheduler.
-func NewScheduler(workerStore *auth.WorkerStore, jobStore *jobs.Store) *Scheduler {
+func NewScheduler(workerStore auth.WorkerStoreInterface, jobStore jobs.JobStoreInterface) *Scheduler {
 	return &Scheduler{
 		workerStore: workerStore,
 		jobStore:    jobStore,
@@ -77,11 +77,11 @@ func (s *Scheduler) Stats() map[string]interface{} {
 	jobList := s.jobStore.ListJobs()
 
 	return map[string]interface{}{
-		"total_workers":   len(workers),
-		"active_workers":  countActiveWorkers(workers),
-		"total_jobs":      len(jobList),
-		"pending_jobs":    countPendingJobs(jobList),
-		"timestamp":       time.Now().Unix(),
+		"total_workers":  len(workers),
+		"active_workers": countActiveWorkers(workers),
+		"total_jobs":     len(jobList),
+		"pending_jobs":   countPendingJobs(jobList),
+		"timestamp":      time.Now().Unix(),
 	}
 }
 

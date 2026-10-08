@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -45,6 +46,30 @@ func (s *Store) AddJob(job *Job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs[job.ID] = job
+}
+
+// UpdateStatus updates a job's status.
+func (s *Store) UpdateStatus(id string, status JobStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if j, ok := s.jobs[id]; ok {
+		j.Status = status
+		return nil
+	}
+	return fmt.Errorf("job %s not found", id)
+}
+
+// GetJobsByStatus returns jobs filtered by status.
+func (s *Store) GetJobsByStatus(status JobStatus) []*Job {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []*Job
+	for _, j := range s.jobs {
+		if j.Status == status {
+			result = append(result, j)
+		}
+	}
+	return result
 }
 
 // GetJob retrieves a job by ID.

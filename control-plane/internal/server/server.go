@@ -20,8 +20,8 @@ import (
 type Server struct {
 	tokenManager *auth.TokenManager
 	ca           *auth.CA
-	workerStore  *auth.WorkerStore
-	jobStore     *jobs.Store
+	workerStore  auth.WorkerStoreInterface
+	jobStore     jobs.JobStoreInterface
 	jobHandler   *api.JobHandler
 	registry     *registry.Registry
 	mux          *http.ServeMux
@@ -30,7 +30,7 @@ type Server struct {
 }
 
 // NewServer creates a new Control Plane server.
-func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore *auth.WorkerStore, jobStore *jobs.Store, reg *registry.Registry) *Server {
+func NewServer(tm *auth.TokenManager, ca *auth.CA, workerStore auth.WorkerStoreInterface, jobStore jobs.JobStoreInterface, reg *registry.Registry) *Server {
 	s := &Server{
 		tokenManager: tm,
 		ca:           ca,
